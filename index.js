@@ -5,7 +5,7 @@ const FormData = require("form-data");
 const path = require("path");
 
 // Bot token and API keys
-const telegramToken = "7603494053:AAHhpqQKLItdNFPoOGI-oq2ZMsDGfQ0-KrM"; // Replace with your bot token
+const telegramToken = "7867936970:AAGXmmMqKnyxU0EiburDdMbf6p_jRBDeMyo"; // Replace with your bot token
 const removeBgApiKey = "zZFYAM1LsodBAK7CQo9xshCa"; // Replace with your remove.bg API key
 const adminId = "1343548529"; // Replace with your admin's Telegram chat ID
 const requiredChannel = "@awt_bots"; // Replace with your channel username
