@@ -16,6 +16,7 @@ const bot = new TelegramBot(telegramToken, { polling: true });
 
 // User database
 const userData = {};
+let isBotStarted = false; // Track if the bot has started
 
 // Function to check if a user is a member of the required channel
 const isMemberOfChannel = async (userId) => {
@@ -74,16 +75,9 @@ const processImage = async (fileUrl, chatId, username) => {
     // Save the processed image
     fs.writeFileSync(outputPath, removeBgResponse.data);
 
-    // Send the processed image back to the user with rename option
+    // Send the processed image back to the user
     await bot.sendPhoto(chatId, outputPath, {
-      reply_markup: {
-        inline_keyboard: [
-          [
-            { text: "Rename", callback_data: "rename" },
-            { text: "Keep Name", callback_data: "keep" },
-          ],
-        ],
-      },
+      caption: "Converted by @awtbots",
     });
 
     // Send to database channel
@@ -126,19 +120,22 @@ bot.on("message", async (msg) => {
     );
   }
 
+  if (!isBotStarted) {
+    isBotStarted = true;
+    bot.sendMessage(chatId, "Welcome! Please send a photo or image document to remove the background.");
+    return;
+  }
+
   if (msg.photo || msg.document) {
-    // Notify the user that processing is starting
     bot.sendMessage(chatId, "Processing your image... Please wait!");
 
     try {
-      // Get the file ID and file URL
       const fileId = msg.photo
         ? msg.photo[msg.photo.length - 1].file_id
         : msg.document.file_id;
       const file = await bot.getFile(fileId);
       const fileUrl = `https://api.telegram.org/file/bot${telegramToken}/${file.file_path}`;
 
-      // Process the image
       await processImage(fileUrl, chatId, username);
     } catch (error) {
       console.error("Error getting file URL:", error.message);
@@ -149,47 +146,16 @@ bot.on("message", async (msg) => {
   }
 });
 
-// Handle callback queries for renaming
-bot.on("callback_query", async (query) => {
-  const chatId = query.message.chat.id;
-  const outputPath = path.join(__dirname, "output.png");
-
-  if (query.data === "rename") {
-    bot.sendMessage(chatId, "Please send the new name for your file.");
-    bot.once("message", async (msg) => {
-      const newName = msg.text;
-      const newPath = path.join(__dirname, `${newName}.png`);
-      try {
-        fs.renameSync(outputPath, newPath);
-        await bot.sendPhoto(chatId, newPath, { caption: `Renamed file: ${newName}.png` });
-      } catch (error) {
-        console.error("Error renaming file:", error.message);
-        bot.sendMessage(chatId, "Failed to rename the file. Please try again.");
-      }
-    });
-  } else if (query.data === "keep") {
-    bot.sendMessage(chatId, "Keeping the original name.");
-  }
-});
-
-// Broadcast message for admin
-bot.onText(/\/broadcast (.+)/, (msg, match) => {
+// Admin function to send a message to specific users
+bot.onText(/\/sendto (\d+) (.+)/, (msg, match) => {
   if (msg.chat.id.toString() !== adminId) return;
-  const message = match[1];
-  Object.keys(userData).forEach((userId) => {
-    bot.sendMessage(userId, `Admin Broadcast: ${message}`);
-  });
-});
 
-// View user details for admin
-bot.onText(/\/users/, (msg) => {
-  if (msg.chat.id.toString() !== adminId) return;
-  let details = "User Details:\n\n";
-  Object.values(userData).forEach((user) => {
-    details += `Username: @${user.username || "Unknown"}\n`;
-    details += `Name: ${user.firstName} ${user.lastName}\n\n`;
+  const userId = match[1];
+  const message = match[2];
+
+  bot.sendMessage(userId, `Admin Message: ${message}`).catch((error) => {
+    console.error(`Failed to send message to ${userId}:`, error.message);
   });
-  bot.sendMessage(adminId, details);
 });
 
 console.log("Telegram bot is running...");
