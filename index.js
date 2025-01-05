@@ -92,6 +92,46 @@ const processImage = async (fileUrl, chatId, username) => {
   }
 };
 
+// Function to prompt users to join the channel
+const askToJoin = async (chatId) => {
+  await bot.sendMessage(
+    chatId,
+    `You must join our channel ${requiredChannel} to use this bot.`,
+    {
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: "Join Channel", url: `https://t.me/${requiredChannel.slice(1)}` }],
+          [{ text: "I Have Joined", callback_data: "joined_channel" }],
+        ],
+      },
+    }
+  );
+};
+
+// Handle callback queries for "I Have Joined" button
+bot.on("callback_query", async (query) => {
+  const chatId = query.message.chat.id;
+
+  if (query.data === "joined_channel") {
+    const isMember = await isMemberOfChannel(chatId);
+    if (isMember) {
+      await bot.sendMessage(chatId, "Thank you for joining! You can now use the bot.");
+    } else {
+      await bot.sendMessage(
+        chatId,
+        `It seems you haven't joined ${requiredChannel} yet. Please join and try again.`,
+        {
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: "Join Channel", url: `https://t.me/${requiredChannel.slice(1)}` }],
+            ],
+          },
+        }
+      );
+    }
+  }
+});
+
 // Bot message handler
 bot.on("message", async (msg) => {
   const chatId = msg.chat.id;
@@ -107,17 +147,7 @@ bot.on("message", async (msg) => {
   // Check if the user is a member of the required channel
   const isMember = await isMemberOfChannel(chatId);
   if (!isMember) {
-    return bot.sendMessage(
-      chatId,
-      `You must join our channel ${requiredChannel} to use this bot.`,
-      {
-        reply_markup: {
-          inline_keyboard: [
-            [{ text: "Join Channel", url: `https://t.me/${requiredChannel.slice(1)}` }],
-          ],
-        },
-      }
-    );
+    return askToJoin(chatId);
   }
 
   if (!isBotStarted) {
