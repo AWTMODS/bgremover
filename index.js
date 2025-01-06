@@ -77,7 +77,7 @@ const processImage = async (fileUrl, chatId, username) => {
 
     // Send the processed image back to the user
     await bot.sendPhoto(chatId, outputPath, {
-      caption: "Converted by @awtbots",
+      caption: "Converted by @awt_bgremover_bot",
     });
 
     // Send to database channel
