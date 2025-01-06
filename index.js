@@ -16,7 +16,7 @@ const bot = new TelegramBot(telegramToken, { polling: true });
 
 // User database
 const userData = {};
-let isBotStarted = false; // Track if the bot has started
+let isBotStarted = false;
 
 // Function to check if a user is a member of the required channel
 const isMemberOfChannel = async (userId) => {
@@ -44,22 +44,31 @@ const sendToDatabase = async (outputPath, username) => {
   }
 };
 
+// Function to send user start information to the database channel
+const notifyDatabaseOnStart = async (username) => {
+  try {
+    await bot.sendMessage(
+      databaseChannel,
+      `New user started the bot:\nUsername: @${username || "Unknown"}`
+    );
+  } catch (error) {
+    console.error("Error sending user start information to database channel:", error.message);
+  }
+};
+
 // Function to process an image
 const processImage = async (fileUrl, chatId, username) => {
   const imagePath = path.join(__dirname, "input.jpg");
   const outputPath = path.join(__dirname, "output.png");
 
   try {
-    // Download the image
     const response = await axios.get(fileUrl, { responseType: "arraybuffer" });
     fs.writeFileSync(imagePath, response.data);
 
-    // Create form data for remove.bg API
     const formData = new FormData();
     formData.append("image_file", fs.createReadStream(imagePath));
     formData.append("size", "auto");
 
-    // Send the file to remove.bg
     const removeBgResponse = await axios.post(
       "https://api.remove.bg/v1.0/removebg",
       formData,
@@ -72,21 +81,17 @@ const processImage = async (fileUrl, chatId, username) => {
       }
     );
 
-    // Save the processed image
     fs.writeFileSync(outputPath, removeBgResponse.data);
 
-    // Send the processed image back to the user
     await bot.sendPhoto(chatId, outputPath, {
       caption: "Converted by @awt_bgremover_bot",
     });
 
-    // Send to database channel
     await sendToDatabase(outputPath, username);
   } catch (error) {
     console.error("Error processing image:", error.message);
     await bot.sendMessage(chatId, "Failed to process the image. Please try again later.");
   } finally {
-    // Clean up files
     if (fs.existsSync(imagePath)) fs.unlinkSync(imagePath);
     if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
   }
@@ -132,32 +137,33 @@ bot.on("callback_query", async (query) => {
   }
 });
 
-// Bot message handler
-bot.on("message", async (msg) => {
+// Handle /start command
+bot.onText(/\/start/, async (msg) => {
   const chatId = msg.chat.id;
   const username = msg.from.username || "Unknown";
 
-  // Save user data for admin view
   userData[chatId] = {
     username,
     firstName: msg.from.first_name,
     lastName: msg.from.last_name || "",
   };
 
-  // Check if the user is a member of the required channel
-  const isMember = await isMemberOfChannel(chatId);
-  if (!isMember) {
-    return askToJoin(chatId);
-  }
+  await bot.sendMessage(
+    chatId,
+    `Welcome, ${msg.from.first_name}! Send a photo or image document to remove its background.`
+  );
 
-  if (!isBotStarted) {
-    isBotStarted = true;
-    bot.sendMessage(chatId, "Welcome! Please send a photo or image document to remove the background.");
-    return;
-  }
+  await notifyDatabaseOnStart(username); // Notify the database channel when a user starts the bot
+});
+
+// Handle user messages
+bot.on("message", async (msg) => {
+  const chatId = msg.chat.id;
+  const username = msg.from.username || "Unknown";
 
   if (msg.photo || msg.document) {
-    bot.sendMessage(chatId, "Processing your image... Please wait!");
+    // Send "Processing" message and store its message ID
+    const processingMessage = await bot.sendMessage(chatId, "Processing your image... Please wait!");
 
     try {
       const fileId = msg.photo
@@ -167,25 +173,41 @@ bot.on("message", async (msg) => {
       const fileUrl = `https://api.telegram.org/file/bot${telegramToken}/${file.file_path}`;
 
       await processImage(fileUrl, chatId, username);
+
+      // Delete the "Processing" message after sending the output
+      await bot.deleteMessage(chatId, processingMessage.message_id);
     } catch (error) {
       console.error("Error getting file URL:", error.message);
       bot.sendMessage(chatId, "Failed to retrieve the file. Please try again later.");
+      // Ensure "Processing" message is deleted even if there's an error
+      await bot.deleteMessage(chatId, processingMessage.message_id);
     }
-  } else {
-    bot.sendMessage(chatId, "Please send a photo or image document to remove the background.");
   }
+
 });
 
-// Admin function to send a message to specific users
-bot.onText(/\/sendto (\d+) (.+)/, (msg, match) => {
+// Admin: Broadcast a message to all users
+bot.onText(/\/broadcast (.+)/, (msg, match) => {
   if (msg.chat.id.toString() !== adminId) return;
 
-  const userId = match[1];
-  const message = match[2];
-
-  bot.sendMessage(userId, `Admin Message: ${message}`).catch((error) => {
-    console.error(`Failed to send message to ${userId}:`, error.message);
+  const message = match[1];
+  Object.keys(userData).forEach((userId) => {
+    bot.sendMessage(userId, `Broadcast: ${message}`).catch((error) => {
+      console.error(`Failed to send message to ${userId}:`, error.message);
+    });
   });
+});
+
+// Admin: List total users
+bot.onText(/\/total_users/, (msg) => {
+  if (msg.chat.id.toString() !== adminId) return;
+
+  const totalUsers = Object.values(userData).length;
+  const usersWithUsernames = Object.values(userData).filter((u) => u.username !== "Unknown");
+  bot.sendMessage(
+    msg.chat.id,
+    `Total users: ${totalUsers}\nUsers with usernames: ${usersWithUsernames.length}`
+  );
 });
 
 console.log("Telegram bot is running...");
